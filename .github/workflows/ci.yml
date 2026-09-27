@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core:
+    name: C 核心（单元测试 + 端到端链路）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: 编译器版本
+        run: gcc --version
+      - name: 单元测试（60 项）
+        shell: bash
+        run: |
+          mkdir -p build
+          gcc -std=c99 -O2 -Wall -Wextra -Wpedantic -Werror -Iinclude \
+              test/test_link.c src/csi2.c src/gvsp.c src/codec.c -o build/clink_test -lm
+          ./build/clink_test
+      - name: 端到端链路（含丢包重传）
+        shell: bash
+        run: |
+          mkdir -p out
+          gcc -std=c99 -O2 -Wall -Wextra -Wpedantic -Werror -Iinclude \
+              src/pipeline.c src/csi2.c src/gvsp.c src/codec.c -o build/clink_pipeline -lm
+          ./build/clink_pipeline --w 256 --h 128 --quality 75 --loss 150 --seed 20260927 --out out
+      - name: 校验链路指标
+        shell: bash
+        run: |
+          grep -q '^csi_reassembled,1' out/metrics.csv
+          grep -q '^gvsp_reassembled,1' out/metrics.csv
+          grep -q '^rle_lossless,1' out/metrics.csv
+          echo "链路指标校验通过"
+
+  inference:
+    name: 推理链路（PyTorch → ONNX → C 三方一致）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: 安装 CPU 版 PyTorch 与推理依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-dev.txt
+      - name: 训练 → 导出 ONNX → 生成 C 权重头
+        run: python tools/export_onnx.py
+      - name: 三方数值对比（容差 1e-4）
+        run: python tools/onnx_infer.py --cpp

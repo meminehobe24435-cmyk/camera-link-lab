@@ -1,0 +1,10 @@
+﻿* text=auto
+*.md text
+*.c text
+*.h text
+*.py text
+*.json text
+*.yml text
+*.csv text
+*.onnx binary
+*.npy binary
