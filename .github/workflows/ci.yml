@@ -49,6 +49,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: requirements-dev.txt
       - name: 安装 CPU 版 PyTorch 与推理依赖
         run: |
           python -m pip install --upgrade pip
